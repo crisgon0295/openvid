@@ -5,14 +5,14 @@ import { useState, useEffect, useRef, startTransition, useCallback, useLayoutEff
 import { useTranslations } from "next-intl";
 import { SliderControl } from "../../../../components/ui/SliderControl";
 import { SVG_CATEGORIES, IMAGE_CATEGORIES, PINNED_SVG_ITEMS, PINNED_IMAGE_ITEMS, getImagePreviewPath } from "@/lib/canvas-elements.config";
-import { SvgElement, TextElement, ImageElement, ElementsMenuProps, PRESET_COLORS, TEXT_PRESETS, FONT_FAMILIES, FONT_WEIGHTS, ACCEPTED_FORMATS, MAX_FILE_SIZE } from "@/types/canvas-elements.types";
+import { SvgElement, TextElement, ImageElement, ElementsMenuProps, PRESET_COLORS, TEXT_PRESETS, FONT_WEIGHTS, ACCEPTED_FORMATS, MAX_FILE_SIZE } from "@/types/canvas-elements.types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { SVG_COMPONENTS } from "@/components/canvas-svg";
 import { TooltipAction } from "@/components/ui/tooltip-action";
 import { ProgressiveImg } from "@/components/ui/ProgressiveImg";
 import { ElementsIcon } from "@/components/ui/ElementsIcon";
+import { FontPicker } from "./FontPicker";
 
 interface ExtendedElementsMenuProps extends ElementsMenuProps {
     textTabTrigger?: number;
@@ -421,16 +421,7 @@ export function ElementsMenu({
 
                         <div className="space-y-2">
                             <div className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">{t("text.font")}</div>
-                            <Select value={textFontFamily} onValueChange={setTextFontFamily}>
-                                <SelectTrigger className="w-full bg-muted/60 hover:bg-muted/50 transition border-border squircle-element text-foreground/80" style={{ fontFamily: textFontFamily }}>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className="bg-popover dark:bg-black border-border">
-                                    {FONT_FAMILIES.map((f) => (
-                                        <SelectItem key={f} value={f} className="text-foreground/80 hover:bg-muted cursor-pointer" style={{ fontFamily: f }}>{f}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <FontPicker value={textFontFamily} onChange={setTextFontFamily} />
                         </div>
                     </div>
 

@@ -200,6 +200,16 @@ function CameraKeyframeMarker<T extends { id: string; time: number }>({
     );
 }
 
+/** mm:ss, or mm:ss.d when markers are less than a second apart. */
+function formatMarkerTime(time: number, step: number): string {
+    if (step >= 1) return formatTime(Math.round(time));
+    const decimals = Math.abs(step - 0.25) < 1e-6 ? 2 : 1;
+    const t = Math.round(time * 100) / 100;
+    const minutes = Math.floor(t / 60);
+    const seconds = (t - minutes * 60).toFixed(decimals).padStart(3 + decimals, "0");
+    return `${String(minutes).padStart(2, "0")}:${seconds}`;
+}
+
 export function Timeline({
     videoDuration,
     currentTime,
@@ -317,6 +327,42 @@ export function Timeline({
     const outputDuration = validDuration / speed;
     const pendingTrimRef = useRef<{ start: number; end: number } | null>(null);
     const TRACK_PADDING = 0;
+
+    // User-resizable timeline height (null = automatic, based on lane count).
+    const [customHeight, setCustomHeight] = useState<number | null>(null);
+    useEffect(() => {
+        try {
+            const saved = Number(localStorage.getItem("openvid:timelineHeight"));
+            if (saved > 0) setCustomHeight(saved);
+        } catch { /* storage unavailable */ }
+    }, []);
+    const handleResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const panel = e.currentTarget.parentElement;
+        if (!panel) return;
+        const startY = e.clientY;
+        const startHeight = panel.getBoundingClientRect().height;
+        const maxHeight = Math.round(window.innerHeight * 0.8);
+        let latest = startHeight;
+        const onMove = (ev: PointerEvent) => {
+            latest = Math.max(120, Math.min(maxHeight, startHeight + (startY - ev.clientY)));
+            setCustomHeight(latest);
+        };
+        const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            document.body.style.cursor = "";
+            try { localStorage.setItem("openvid:timelineHeight", String(Math.round(latest))); } catch { /* ignore */ }
+        };
+        document.body.style.cursor = "row-resize";
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }, []);
+    const resetTimelineHeight = useCallback(() => {
+        setCustomHeight(null);
+        try { localStorage.removeItem("openvid:timelineHeight"); } catch { /* ignore */ }
+    }, []);
 
     const contentWidth = useMemo(() => {
         if (trackWidth === 0) return 0;
@@ -457,10 +503,14 @@ export function Timeline({
 
     const timeMarkers = useMemo(() => {
         if (outputDuration === 0 || validDuration === 0) return [];
-        const baseInterval = outputDuration / 6;
-        const adjustedInterval = baseInterval / Math.sqrt(getZoomMultiplier(zoomLevel));
+        // Pick a "nice" step so labels stay ~110px apart at any zoom level,
+        // down to 0.1 s when the timeline is stretched for fine edits.
+        const pxPerSecond = contentWidth > 0 ? contentWidth / validDuration : 0;
+        const NICE_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+        const targetSeconds = pxPerSecond > 0 ? 110 / pxPerSecond : outputDuration / 6;
+        const adjustedInterval = NICE_STEPS.find((s) => s >= targetSeconds) ?? Math.max(outputDuration / 6, 600);
         const markerCount = Math.ceil(outputDuration / adjustedInterval) + 1;
-        return Array.from({ length: Math.min(markerCount, 50) }, (_, i) => ({
+        return Array.from({ length: Math.min(markerCount, 4000) }, (_, i) => ({
             time: adjustedInterval * i,
             position: (adjustedInterval * i / validDuration) * contentWidth
         })).filter(m => m.time <= outputDuration);
@@ -844,17 +894,33 @@ export function Timeline({
             }}
         >
             <div
-                className={`${totalLanesCount >= 4
-                    ? 'h-96'
-                    : totalLanesCount === 3
-                        ? 'h-80'
-                        : totalLanesCount === 2
-                            ? 'h-64'
-                            : totalLanesCount === 1
-                                ? 'h-50'
-                                : 'h-38'
-                    } max-h-[min(24rem,45vh)] shrink-0 bg-background border-t border-border flex flex-col font-mono text-[11px] transition-all duration-200`}
+                className={`${customHeight !== null
+                    ? 'relative'
+                    : `relative ${totalLanesCount >= 4
+                        ? 'h-96'
+                        : totalLanesCount === 3
+                            ? 'h-80'
+                            : totalLanesCount === 2
+                                ? 'h-64'
+                                : totalLanesCount === 1
+                                    ? 'h-50'
+                                    : 'h-38'
+                    } max-h-[min(24rem,45vh)] transition-all duration-200`
+                    } shrink-0 bg-background border-t border-border flex flex-col font-mono text-[11px]`}
+                style={customHeight !== null ? { height: customHeight } : undefined}
             >
+                {/* Drag the top edge to make the timeline taller; double-click resets. */}
+                <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize timeline"
+                    title="Arrastra para cambiar la altura · doble clic para restablecer"
+                    onPointerDown={handleResizePointerDown}
+                    onDoubleClick={resetTimelineHeight}
+                    className="absolute -top-1.5 left-0 right-0 z-30 h-3 cursor-row-resize group/resize"
+                >
+                    <div className="mx-auto mt-1 h-1 w-12 rounded-full bg-border transition-colors group-hover/resize:bg-primary" />
+                </div>
                 <div className="flex-1 flex flex-col relative overflow-hidden">
                     <div
                         ref={trackRef}
@@ -939,7 +1005,7 @@ export function Timeline({
                                                     textShadow: '0 0 2px var(--color-background), 0 0 4px var(--color-background)'
                                                 }}
                                             >
-                                                {formatTime(marker.time)}
+                                                {formatMarkerTime(marker.time, timeMarkers.length > 1 ? timeMarkers[1].time : 1)}
                                             </span>
                                         ))}
                                     </div>

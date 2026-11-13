@@ -1,6 +1,7 @@
 import type { SvgElement, CanvasElement } from "@/types/canvas-elements.types";
 import { getSvgDataUrl } from "@/components/canvas-svg";
 import { VIDEO_Z_INDEX } from "@/lib/constants";
+import { cssFontFamily } from "@/lib/font-library";
 
 export async function renderCanvasElements(
   ctx: CanvasRenderingContext2D,
@@ -104,7 +105,7 @@ export async function renderCanvasElements(
       ctx.globalAlpha = element.opacity;
       const scaledFontSize = element.fontSize * (referenceSize / 1080);
       const fontWeight = element.fontWeight === 'normal' ? '400' : element.fontWeight === 'medium' ? '500' : '700';
-      ctx.font = `${fontWeight} ${scaledFontSize}px ${element.fontFamily}`;
+      ctx.font = `${fontWeight} ${scaledFontSize}px ${cssFontFamily(element.fontFamily)}`;
       ctx.fillStyle = element.color;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';

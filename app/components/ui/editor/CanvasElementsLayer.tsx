@@ -10,6 +10,7 @@ import {
 } from "@/lib";
 import { CanvasElement, SvgElement, ImageElement, TextElement } from "@/types/canvas-elements.types";
 import { useRef, useState, useEffect, useCallback, useMemo, memo } from "react";
+import { cssFontFamily, ensureFontLoaded } from "@/lib/font-library";
 
 export interface ElementResizeStart {
     id: string;
@@ -68,7 +69,7 @@ function InlineTextEditor({
             aria-multiline="true"
             style={{
                 fontSize: `${fontSize}px`,
-                fontFamily: element.fontFamily,
+                fontFamily: cssFontFamily(element.fontFamily),
                 fontWeight: element.fontWeight === "normal" ? 400 : element.fontWeight === "medium" ? 500 : 700,
                 color: element.color,
                 opacity: element.opacity,
@@ -153,6 +154,13 @@ function CanvasElementsLayerImpl({
     setIsDraggingElementResize?: (dragging: boolean) => void;
     elementResizeStart?: React.MutableRefObject<ElementResizeStart | null>;
 }) {
+    // Load Google / uploaded fonts used by text elements (preview + export).
+    const textFontsKey = canvasElements.filter((el): el is TextElement => el.type === "text").map((el) => el.fontFamily).join("|");
+    useEffect(() => {
+        if (!textFontsKey) return;
+        Array.from(new Set(textFontsKey.split("|"))).forEach((family) => void ensureFontLoaded(family));
+    }, [textFontsKey]);
+
     const layerRef = useRef<HTMLDivElement>(null);
     const [refSize, setRefSize] = useState(0);
 
@@ -411,7 +419,7 @@ function CanvasElementsLayerImpl({
                                     className="whitespace-pre pointer-events-none"
                                     style={{
                                         fontSize: refSize > 0 ? `${element.fontSize * (refSize / 1080)}px` : `${element.fontSize}px`,
-                                        fontFamily: element.fontFamily,
+                                        fontFamily: cssFontFamily(element.fontFamily),
                                         opacity: 0
                                     }}
                                 >
@@ -517,7 +525,7 @@ function CanvasElementsLayerImpl({
                                     className="whitespace-pre"
                                     style={{
                                         fontSize: refSize > 0 ? `${element.fontSize * (refSize / 1080)}px` : `${element.fontSize}px`,
-                                        fontFamily: element.fontFamily,
+                                        fontFamily: cssFontFamily(element.fontFamily),
                                         fontWeight: element.fontWeight === 'normal' ? 400 : element.fontWeight === 'medium' ? 500 : 700,
                                         textAlign: 'left',
                                         color: element.color,

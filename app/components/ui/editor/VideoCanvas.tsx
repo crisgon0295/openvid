@@ -540,6 +540,13 @@ function VideoCanvasInner({
     const [elementCorners, setElementCorners] = useState<Record<string, Corner | null>>({});
 
     const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+    // The camera <video> mounts/unmounts with the overlay (keyframes can
+    // toggle it), so effects must re-run against whichever element is live.
+    const [cameraVideoEl, setCameraVideoEl] = useState<HTMLVideoElement | null>(null);
+    const attachCameraVideo = useCallback((el: HTMLVideoElement | null) => {
+        cameraVideoRef.current = el;
+        setCameraVideoEl(el);
+    }, []);
     const previewContainerRef = useRef<HTMLDivElement>(null);
     const canvasWrapperRef = useRef<HTMLDivElement>(null);
 
@@ -1013,7 +1020,7 @@ function VideoCanvasInner({
 
     // Camera overlay: load src when cameraUrl changes
     useEffect(() => {
-        const el = cameraVideoRef.current;
+        const el = cameraVideoEl;
         if (!el) return;
         if (!cameraSourceUrl) {
             if (el.src) {
@@ -1027,12 +1034,12 @@ function VideoCanvasInner({
             el.src = cameraSourceUrl;
             el.load();
         }
-    }, [cameraSourceUrl]);
+    }, [cameraSourceUrl, cameraVideoEl]);
 
     // Camera overlay: sync playback with main video (time, play/pause, seek)
     useEffect(() => {
         const mainVideo = videoRef.current;
-        const camVideo = cameraVideoRef.current;
+        const camVideo = cameraVideoEl;
         if (!mainVideo || !camVideo || !cameraUrl) return;
 
         // Seeking a MediaRecorder WebM is expensive (sparse keyframes), so
@@ -1051,6 +1058,13 @@ function VideoCanvasInner({
             }
         };
         const syncTime = () => {
+            // Keep play state matched even if a play/pause event was missed
+            // (e.g. the overlay mounted while the main video was playing).
+            if (!mainVideo.paused && camVideo.paused && camVideo.readyState >= 1) {
+                camVideo.play().catch(() => undefined);
+            } else if (mainVideo.paused && !camVideo.paused) {
+                camVideo.pause();
+            }
             const drift = mainVideo.currentTime - camVideo.currentTime;
             const baseRate = mainVideo.playbackRate || 1;
             if (mainVideo.paused || Math.abs(drift) > HARD_SYNC_THRESHOLD) {
@@ -1080,15 +1094,21 @@ function VideoCanvasInner({
         mainVideo.addEventListener("seeked", seekCamera);
         mainVideo.addEventListener("timeupdate", syncTime);
         mainVideo.addEventListener("ratechange", syncRate);
+        camVideo.addEventListener("loadedmetadata", syncTime);
+        // Initial alignment for a freshly mounted / freshly loaded overlay.
+        syncRate();
+        seekCamera();
+        if (!mainVideo.paused) camVideo.play().catch(() => undefined);
 
         return () => {
+            camVideo.removeEventListener("loadedmetadata", syncTime);
             mainVideo.removeEventListener("play", syncPlay);
             mainVideo.removeEventListener("pause", syncPause);
             mainVideo.removeEventListener("seeked", seekCamera);
             mainVideo.removeEventListener("timeupdate", syncTime);
             mainVideo.removeEventListener("ratechange", syncRate);
         };
-    }, [videoRef, cameraUrl]);
+    }, [videoRef, cameraUrl, cameraVideoEl]);
 
     // Capture start positions of all selected elements ONCE when drag begins
     useEffect(() => {
@@ -2829,7 +2849,7 @@ function VideoCanvasInner({
                                                 }}
                                             >
                                                 <video
-                                                    ref={cameraVideoRef}
+                                                    ref={attachCameraVideo}
                                                     muted
                                                     playsInline
                                                     preload="auto"

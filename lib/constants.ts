@@ -35,19 +35,20 @@ export const MIN_TRIM_DURATION = 0.5;
 
 /**
  * Tabla de multiplicadores de zoom para el timeline
- * zoom 1× → 1.0 (sin estiramiento), zoom 10× → 2.5 (estiramiento moderado)
+ * Escala exponencial: zoom 1× → 1.0 (vista completa), zoom 10× → 40
+ * (≈0.1 s legibles para ajustar movimientos de cámara con precisión).
  */
 export const TIMELINE_ZOOM_SCALE: Record<number, number> = {
     1: 1.0,
-    2: 1.2,
-    3: 1.4,
-    4: 1.6,
-    5: 1.8,
-    6: 2.0,
-    7: 2.1,
-    8: 2.2,
-    9: 2.35,
-    10: 2.5,
+    2: 1.6,
+    3: 2.5,
+    4: 4,
+    5: 6,
+    6: 9,
+    7: 14,
+    8: 20,
+    9: 30,
+    10: 40,
 };
 
 // Mockups con header → solo esquinas INFERIORES del video redondeadas
