@@ -1,4 +1,5 @@
 import type { VideoTrackClip } from "@/types/video-track.types";
+import { makeCameraDecodable } from "@/lib/vp9-range-fix";
 import type { ZoomFragment, ZoomMovement } from "@/types/zoom.types";
 import type { AudioTrack } from "@/types/audio.types";
 import type { CanvasElement } from "@/types/canvas-elements.types";
@@ -428,7 +429,7 @@ export async function getCameraBlob(id: string): Promise<CachedCameraBlob | null
     try {
         const db = await openDB();
 
-        return new Promise((resolve, reject) => {
+        const cached = await new Promise<CachedCameraBlob | null>((resolve, reject) => {
             const transaction = db.transaction(CAMERA_STORE, "readonly");
             const store = transaction.objectStore(CAMERA_STORE);
             const request = store.get(id);
@@ -436,6 +437,18 @@ export async function getCameraBlob(id: string): Promise<CachedCameraBlob | null
             request.onsuccess = () => resolve(request.result ?? null);
             request.onerror = () => reject(request.error);
         });
+        if (!cached) return null;
+
+        // Heal full-range VP9 camera tracks (undecodable in Chrome) once, in place.
+        const fix = await makeCameraDecodable(cached.blob);
+        if (fix.changed && fix.blob) {
+            try {
+                return await saveCameraBlob(cached.id, fix.blob, cached.mimeType, cached.cameraConfig);
+            } catch {
+                return { ...cached, blob: fix.blob };
+            }
+        }
+        return cached;
     } catch (error) {
         console.error("Error getting camera blob:", error);
         return null;

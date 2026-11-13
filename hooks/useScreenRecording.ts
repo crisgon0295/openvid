@@ -10,6 +10,7 @@ import { clearVideoTrack } from "@/lib/video-upload-cache";
 import { clearVideoProjectAndAudios } from "@/lib/video-project-cache";
 import { normalizeRecordingBlob, probeBlobDuration, type NormalizedRecording } from "@/lib/webm-duration.utils";
 import { RecordingBackup, downloadBlob, makeBackupId } from "@/lib/local-backup";
+import { makeCameraDecodable } from "@/lib/vp9-range-fix";
 
 export type { RecordingState, RecordingResult, VideoData, RecordingContextType };
 
@@ -244,7 +245,7 @@ export async function loadVideoFromIndexedDB(): Promise<{
         if (data) {
           const videoId = data.videoId || `vid_${data.timestamp || Date.now()}`;
           const timestamp = data.timestamp || Date.now();
-          const cameraBlob: Blob | null = data.cameraBlob ?? null;
+          let cameraBlob: Blob | null = data.cameraBlob ?? null;
 
           void (async () => {
             // Heal legacy recordings whose WebM header has no duration.
@@ -263,6 +264,27 @@ export async function loadVideoFromIndexedDB(): Promise<{
                 height: height ?? null,
               });
               return;
+            }
+
+            // Heal camera tracks recorded as full-range VP9 (undecodable in
+            // Chrome: frozen overlay, black export) and persist the fix once.
+            const camFix = await makeCameraDecodable(cameraBlob);
+            if (camFix.changed && camFix.blob) {
+              cameraBlob = camFix.blob;
+              try {
+                const fixDb = await getDB();
+                await new Promise<void>((res) => {
+                  const tx = fixDb.transaction(["videos"], "readwrite");
+                  tx.objectStore("videos").put(
+                    { ...data, blob, duration, width: width ?? null, height: height ?? null, cameraBlob },
+                    "currentVideo"
+                  );
+                  tx.oncomplete = () => { fixDb.close(); res(); };
+                  tx.onerror = () => { fixDb.close(); res(); };
+                });
+              } catch (error) {
+                console.warn("Failed to persist camera range fix:", error);
+              }
             }
 
             releaseCachedLoadedVideo();
@@ -421,6 +443,7 @@ export function useScreenRecording() {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cameraConfigRef = useRef<CameraConfig | null>(null);
   const cancelledRef = useRef(false);
+  const allowUnloadRef = useRef(false);
 
   useEffect(() => {
     stateRef.current = state;
@@ -430,6 +453,7 @@ export function useScreenRecording() {
   useEffect(() => {
     if (state !== "recording" && state !== "processing") return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (allowUnloadRef.current) return;
       e.preventDefault();
       e.returnValue = "";
     };
@@ -520,6 +544,7 @@ export function useScreenRecording() {
     (screenStream: MediaStream, camStream: MediaStream | null) => {
       try {
         cancelledRef.current = false;
+        allowUnloadRef.current = false;
         screenChunksRef.current = [];
         cameraChunksRef.current = [];
         startTimeRef.current = Date.now();
@@ -621,12 +646,15 @@ export function useScreenRecording() {
             }
 
             const duration = normalizedScreen.duration > 0 ? normalizedScreen.duration : wallClockDuration;
-            await secureOnDisk(normalizedScreen.blob, normalizedCamera?.blob ?? cameraBlob);
+            // Never drop the camera if its normalization failed; then make it decodable.
+            const { blob: finalCamera } = await makeCameraDecodable(normalizedCamera?.blob ?? cameraBlob);
+
+            await secureOnDisk(normalizedScreen.blob, finalCamera);
 
             const dimensions = await probeBlobDimensions(normalizedScreen.blob);
 
             await saveVideoToIndexedDB(normalizedScreen.blob, duration, {
-              cameraBlob: normalizedCamera?.blob ?? null,
+              cameraBlob: finalCamera,
               cameraConfig: cameraConfigRef.current,
               width: dimensions?.width,
               height: dimensions?.height,
@@ -635,6 +663,9 @@ export function useScreenRecording() {
             await clearVideoTrack();
             await clearVideoProjectAndAudios();
 
+            // The take is saved: let our own reload/navigation through the
+            // "unsaved changes" guard instead of prompting the user.
+            allowUnloadRef.current = true;
             if (pathname === "/editor") {
               window.location.reload();
             } else {
