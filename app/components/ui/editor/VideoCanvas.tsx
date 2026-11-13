@@ -1035,32 +1035,58 @@ function VideoCanvasInner({
         const camVideo = cameraVideoRef.current;
         if (!mainVideo || !camVideo || !cameraUrl) return;
 
-        const syncTime = () => {
-            if (!camVideo.seeking && Math.abs(camVideo.currentTime - mainVideo.currentTime) > 0.15) {
-                try {
-                    camVideo.currentTime = mainVideo.currentTime;
-                } catch {
-                    // ignore seek errors on not-yet-ready video
-                }
+        // Seeking a MediaRecorder WebM is expensive (sparse keyframes), so
+        // re-seeking on every timeupdate kept the overlay permanently stuck
+        // mid-seek. Small drift is corrected by nudging playbackRate; only a
+        // large jump (user seek, stall) triggers a real seek.
+        const HARD_SYNC_THRESHOLD = 0.5;
+        const SOFT_SYNC_THRESHOLD = 0.08;
+
+        const seekCamera = () => {
+            if (camVideo.seeking) return;
+            try {
+                camVideo.currentTime = mainVideo.currentTime;
+            } catch {
+                // ignore seek errors on not-yet-ready video
             }
         };
+        const syncTime = () => {
+            const drift = mainVideo.currentTime - camVideo.currentTime;
+            const baseRate = mainVideo.playbackRate || 1;
+            if (mainVideo.paused || Math.abs(drift) > HARD_SYNC_THRESHOLD) {
+                camVideo.playbackRate = baseRate;
+                if (Math.abs(drift) > SOFT_SYNC_THRESHOLD) seekCamera();
+                return;
+            }
+            camVideo.playbackRate = Math.abs(drift) > SOFT_SYNC_THRESHOLD
+                ? baseRate * (drift > 0 ? 1.05 : 0.95)
+                : baseRate;
+        };
         const syncPlay = () => {
+            camVideo.playbackRate = mainVideo.playbackRate || 1;
+            if (Math.abs(mainVideo.currentTime - camVideo.currentTime) > SOFT_SYNC_THRESHOLD) seekCamera();
             camVideo.play().catch(() => undefined);
         };
         const syncPause = () => {
             if (!camVideo.paused) camVideo.pause();
+            seekCamera();
+        };
+        const syncRate = () => {
+            camVideo.playbackRate = mainVideo.playbackRate || 1;
         };
 
         mainVideo.addEventListener("play", syncPlay);
         mainVideo.addEventListener("pause", syncPause);
-        mainVideo.addEventListener("seeked", syncTime);
+        mainVideo.addEventListener("seeked", seekCamera);
         mainVideo.addEventListener("timeupdate", syncTime);
+        mainVideo.addEventListener("ratechange", syncRate);
 
         return () => {
             mainVideo.removeEventListener("play", syncPlay);
             mainVideo.removeEventListener("pause", syncPause);
-            mainVideo.removeEventListener("seeked", syncTime);
+            mainVideo.removeEventListener("seeked", seekCamera);
             mainVideo.removeEventListener("timeupdate", syncTime);
+            mainVideo.removeEventListener("ratechange", syncRate);
         };
     }, [videoRef, cameraUrl]);
 

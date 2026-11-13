@@ -336,6 +336,32 @@ function pickSupportedMimeType(preferred: string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * MediaRecorder defaults to a low bitrate and very sparse keyframes (one every
+ * 5-15s), which looks soft and makes every seek in the editor decode seconds of
+ * video — the camera overlay, which is re-synced by seeking, appears frozen.
+ * `videoKeyFrameIntervalDuration` is Chromium-only and ignored elsewhere.
+ */
+function buildRecorderOptions(
+  mimeType: string | undefined,
+  videoBitsPerSecond: number,
+  keyFrameIntervalMs: number
+): MediaRecorderOptions {
+  return {
+    ...(mimeType ? { mimeType } : {}),
+    videoBitsPerSecond,
+    videoKeyFrameIntervalDuration: keyFrameIntervalMs,
+  } as MediaRecorderOptions;
+}
+
+function createRecorder(stream: MediaStream, options: MediaRecorderOptions): MediaRecorder {
+  try {
+    return new MediaRecorder(stream, options);
+  } catch {
+    return new MediaRecorder(stream, options.mimeType ? { mimeType: options.mimeType } : undefined);
+  }
+}
+
 async function probeBlobDimensions(blob: Blob): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -433,9 +459,11 @@ export function useScreenRecording() {
 
   useEffect(() => {
     if (state !== "recording") return;
+    // Derive the elapsed time from the wall clock: background tabs throttle
+    // timers, so counting ticks drifts far behind the real recording length.
     const interval = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
-    }, 1000);
+      setRecordingTime(Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000)));
+    }, 500);
     recordingTimerRef.current = interval;
     return () => {
       clearInterval(interval);
@@ -491,9 +519,9 @@ export function useScreenRecording() {
             "video/webm;codecs=vp8",
             "video/webm",
           ]) || undefined;
-        const screenRecorder = new MediaRecorder(
+        const screenRecorder = createRecorder(
           screenStream,
-          screenMime ? { mimeType: screenMime } : undefined
+          buildRecorderOptions(screenMime, 8_000_000, 2000)
         );
         screenRecorderRef.current = screenRecorder;
         screenRecorder.ondataavailable = (event) => {
@@ -510,16 +538,17 @@ export function useScreenRecording() {
         };
 
         let cameraRecorder: MediaRecorder | null = null;
+        let camMime: string | undefined;
         if (camStream) {
-          const camMime =
+          camMime =
             pickSupportedMimeType([
               "video/webm;codecs=vp9",
               "video/webm;codecs=vp8",
               "video/webm",
             ]) || undefined;
-          cameraRecorder = new MediaRecorder(
+          cameraRecorder = createRecorder(
             camStream,
-            camMime ? { mimeType: camMime } : undefined
+            buildRecorderOptions(camMime, 4_000_000, 1000)
           );
           cameraRecorderRef.current = cameraRecorder;
           cameraRecorder.ondataavailable = (event) => {
@@ -603,7 +632,7 @@ export function useScreenRecording() {
         if (cameraRecorder) {
           cameraRecorder.onstop = () => {
             cameraBlob = new Blob(cameraChunksRef.current, {
-              type: "video/webm",
+              type: camMime || "video/webm",
             });
             pendingCount -= 1;
             if (pendingCount <= 0) finalize();
@@ -640,7 +669,10 @@ export function useScreenRecording() {
         setError(null);
         setRecordingTime(0);
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { displaySurface: "browser" },
+          video: {
+            displaySurface: "browser",
+            frameRate: { ideal: 30 },
+          },
           audio: setup.systemAudio
             ? { echoCancellation: true, noiseSuppression: true }
             : false,
@@ -762,12 +794,6 @@ export function useScreenRecording() {
     setCameraConfig(null);
     restoreOriginals();
   }, [cleanupStreams, restoreOriginals]);
-
-  useEffect(() => {
-    if (recordingTime >= 120 && state === "recording") {
-      stopRecording();
-    }
-  }, [recordingTime, state, stopRecording]);
 
   return {
     state,
