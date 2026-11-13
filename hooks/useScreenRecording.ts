@@ -9,6 +9,7 @@ import { clearAllThumbnailCache } from "@/lib/thumbnail-cache";
 import { clearVideoTrack } from "@/lib/video-upload-cache";
 import { clearVideoProjectAndAudios } from "@/lib/video-project-cache";
 import { normalizeRecordingBlob, probeBlobDuration, type NormalizedRecording } from "@/lib/webm-duration.utils";
+import { RecordingBackup, downloadBlob, makeBackupId } from "@/lib/local-backup";
 
 export type { RecordingState, RecordingResult, VideoData, RecordingContextType };
 
@@ -425,6 +426,17 @@ export function useScreenRecording() {
     stateRef.current = state;
   }, [state]);
 
+  // Warn before closing the tab mid-recording or while the take is saved.
+  useEffect(() => {
+    if (state !== "recording" && state !== "processing") return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [state]);
+
   useEffect(() => {
     cameraConfigRef.current = cameraConfig;
   }, [cameraConfig]);
@@ -511,6 +523,7 @@ export function useScreenRecording() {
         screenChunksRef.current = [];
         cameraChunksRef.current = [];
         startTimeRef.current = Date.now();
+        const backup = new RecordingBackup(makeBackupId());
         const screenMime =
           pickSupportedMimeType([
             "video/webm;codecs=vp9,opus",
@@ -527,6 +540,7 @@ export function useScreenRecording() {
         screenRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             screenChunksRef.current.push(event.data);
+            backup.append("screen", event.data);
           }
         };
         screenRecorder.onerror = (event) => {
@@ -554,6 +568,7 @@ export function useScreenRecording() {
           cameraRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
               cameraChunksRef.current.push(event.data);
+              backup.append("camera", event.data);
             }
           };
           cameraRecorder.onerror = (event) => {
@@ -572,9 +587,23 @@ export function useScreenRecording() {
           setState("processing");
           const wallClockDuration = (Date.now() - startTimeRef.current) / 1000;
           cleanupStreams();
+          const rawScreenBlob =
+            screenBlob || new Blob([], { type: screenMime || "video/webm" });
+          // Make sure the take exists on disk no matter what happens next.
+          let secured = false;
+          const secureOnDisk = async (screen: Blob, camera: Blob | null) => {
+            if (secured || screen.size === 0) return;
+            const diskOk =
+              (await backup.isHealthy()) &&
+              (await backup.writeFinal("screen", screen)) &&
+              (!camera || (await backup.writeFinal("camera", camera)));
+            if (!diskOk) {
+              downloadBlob(screen, `${backup.id}-screen.webm`);
+              if (camera) downloadBlob(camera, `${backup.id}-camera.webm`);
+            }
+            secured = true;
+          };
           try {
-            const rawScreenBlob =
-              screenBlob || new Blob([], { type: screenMime || "video/webm" });
             // MediaRecorder WebMs lack duration metadata; remux (packet copy,
             // no re-encode) so the stored file reports a real duration.
             let normalizedScreen: NormalizedRecording;
@@ -592,6 +621,8 @@ export function useScreenRecording() {
             }
 
             const duration = normalizedScreen.duration > 0 ? normalizedScreen.duration : wallClockDuration;
+            await secureOnDisk(normalizedScreen.blob, normalizedCamera?.blob ?? cameraBlob);
+
             const dimensions = await probeBlobDimensions(normalizedScreen.blob);
 
             await saveVideoToIndexedDB(normalizedScreen.blob, duration, {
@@ -612,6 +643,11 @@ export function useScreenRecording() {
 
           } catch (err) {
             console.error("Error saving recording:", err);
+            try {
+              await secureOnDisk(rawScreenBlob, cameraBlob);
+            } catch (backupErr) {
+              console.error("Could not secure recording on disk:", backupErr);
+            }
             setError("Error processing video");
             setState("idle");
             restoreOriginals();
