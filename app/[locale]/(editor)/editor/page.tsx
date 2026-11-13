@@ -31,6 +31,9 @@ import {
     mergeCameraConfig,
     sampleCameraOverlayKeyframes,
 } from "@/lib/camera-overlay-animation";
+import { SUBTITLE_ID_PREFIX } from "@/app/components/ui/editor/SubtitlesPanel";
+import type { AudioSource } from "@/lib/subtitles/transcribe";
+import type { TextElement } from "@/types/canvas-elements.types";
 import type { CameraOverlayKeyframe } from "@/lib/camera-overlay-animation";
 import type { Preview3DConfig, ImageMaskConfig } from "@/types/photo.types";
 import { DEFAULT_MASK_CONFIG, PREVIEW_CONFIGS } from "@/types/photo.types";
@@ -758,6 +761,31 @@ export default function Editor() {
     }, [muteOriginalAudio]);
 
     const [globalSpeed, setGlobalSpeed] = useState<number>(1);
+
+    // Automatic subtitles: audio laid out like the timeline (clips, trims).
+    const getSubtitleAudioSources = useCallback((): AudioSource[] => {
+        const clips = videoClipsRef.current;
+        if (clips.length > 0) {
+            return clips.flatMap((clip) => {
+                const url = videoUrlsRef.current.get(clip.libraryVideoId);
+                return url ? [{ url, startTime: clip.startTime, trimStart: clip.trimStart, trimEnd: clip.trimEnd }] : [];
+            });
+        }
+        return videoUrl && videoDuration > 0
+            ? [{ url: videoUrl, startTime: 0, trimStart: 0, trimEnd: videoDuration }]
+            : [];
+    }, [videoUrl, videoDuration]);
+    const subtitleCount = useMemo(
+        () => canvasElements.filter((el) => el.id.startsWith(SUBTITLE_ID_PREFIX)).length,
+        [canvasElements]
+    );
+    const replaceSubtitles = useCallback((elements: TextElement[]) => {
+        setCanvasElements((prev) => [...prev.filter((el) => !el.id.startsWith(SUBTITLE_ID_PREFIX)), ...elements]);
+    }, [setCanvasElements]);
+    const subtitlesProps = useMemo(
+        () => ({ getAudioSources: getSubtitleAudioSources, subtitleCount, onReplaceSubtitles: replaceSubtitles }),
+        [getSubtitleAudioSources, subtitleCount, replaceSubtitles]
+    );
     const globalSpeedRef = useRef<number>(1);
     useEffect(() => { globalSpeedRef.current = globalSpeed; }, [globalSpeed]);
 
@@ -3163,6 +3191,7 @@ export default function Editor() {
                                         initialMockupMenuPage={initialMockupMenuPage}
                                         mockupMenuNavigationToken={mockupMenuNavigationToken}
                                         onAddCanvasElement={addCanvasElement}
+                                        subtitles={subtitlesProps}
                                         selectedCanvasElement={selectedCanvasElement}
                                         onUpdateCanvasElement={updateCanvasElement}
                                         onDeleteCanvasElement={deleteCanvasElement}

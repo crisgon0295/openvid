@@ -29,12 +29,14 @@ const HistoryMenu = lazy(() => import("./HistoryMenu").then(mod => ({ default: m
 const MotionGlobalConfig = lazy(() => import("./MotionGlobalConfig").then(mod => ({ default: mod.MotionGlobalConfig })));
 const MotionFragmentEditor = lazy(() => import("./MotionFragmentEditor").then(mod => ({ default: mod.MotionFragmentEditor })));
 const MotionFragmentEditor3D = lazy(() => import("./MotionFragmentEditor3D").then(mod => ({ default: mod.MotionFragmentEditor3D })));
+import type { SubtitlesPanelProps } from "./SubtitlesPanel";
 import { MOTION_PRESET_3D_IDS } from "@/lib/mockup-motion";
 
 interface ExtendedControlPanelProps extends ControlPanelProps {
     onTogglePanel?: () => void;
     isOpen?: boolean;
     elementsTextTabTrigger?: number;
+    subtitles?: SubtitlesPanelProps;
 }
 
 export function ControlPanel({
@@ -61,6 +63,7 @@ export function ControlPanel({
     onBackgroundColorChange,
     onTogglePanel,
     elementsTextTabTrigger = 0,
+    subtitles,
     isOpen = true,
     // Zoom props
     zoomFragments = [],
@@ -414,6 +417,7 @@ export function ControlPanel({
                             onBringToFront={onBringToFront}
                             onSendToBack={onSendToBack}
                             textTabTrigger={elementsTextTabTrigger}
+                            subtitles={subtitles}
                         />
                     </Suspense>
                 )}

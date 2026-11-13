@@ -13,9 +13,11 @@ import { TooltipAction } from "@/components/ui/tooltip-action";
 import { ProgressiveImg } from "@/components/ui/ProgressiveImg";
 import { ElementsIcon } from "@/components/ui/ElementsIcon";
 import { FontPicker } from "./FontPicker";
+import { SubtitlesPanel, type SubtitlesPanelProps } from "./SubtitlesPanel";
 
 interface ExtendedElementsMenuProps extends ElementsMenuProps {
     textTabTrigger?: number;
+    subtitles?: SubtitlesPanelProps;
 }
 
 const DEFAULT_SHAPE_SIZE = 20;
@@ -27,6 +29,7 @@ export function ElementsMenu({
     onUpdateElement,
     onDeleteElement,
     textTabTrigger = 0,
+    subtitles,
 }: ExtendedElementsMenuProps) {
     const t = useTranslations("elementsMenu");
 
@@ -473,6 +476,8 @@ export function ElementsMenu({
                         <Icon icon="ph:plus-bold" width="16" />
                         {t("text.addButton")}
                     </Button>
+
+                    {subtitles && <SubtitlesPanel {...subtitles} />}
                 </div>
             )}
 
