@@ -100,6 +100,8 @@ export function ControlPanel({
     // Audio props
     uploadedAudios = [],
     audioTracks = [],
+    muteOriginalAudio = false,
+    onToggleMuteOriginalAudio,
     onAudioUpload,
     onUpdateAudioTrack,
     onDeleteAudioTrack,
@@ -433,6 +435,8 @@ export function ControlPanel({
                             onDeleteAudioTrack={onDeleteAudioTrack || (() => { })}
                             selectedAudioTrackId={selectedAudioTrackId ?? null}
                             onSelectAudioTrack={setSelectedAudioTrackId || (() => { })}
+                            muteOriginalAudio={muteOriginalAudio}
+                            onToggleMuteOriginalAudio={onToggleMuteOriginalAudio}
                         />
                     </Suspense>
                 )}

@@ -111,8 +111,9 @@ export function useAudioTracks({ videoDuration, isExportingRef, selectedAudioTra
         setAutoTrimModalOpen(true);
       } else {
         const newTrack: AudioTrack = { id: trackId, audioId: newAudio.id, name: newAudio.name, startTime: lastTrackEnd, duration: newAudio.duration, volume: 1, loop: false };
+        // Sound effects / music are layered on top of the video: never mute
+        // the original voice automatically (use the toggle in the Audio menu).
         setAudioTracks(prev => [...prev, newTrack]);
-        if (audioTracks.length === 0) setMuteOriginalAudio(true);
       }
     } catch (error) {
       console.error('Error uploading audio:', error);
@@ -139,7 +140,6 @@ export function useAudioTracks({ videoDuration, isExportingRef, selectedAudioTra
     const lastTrackEnd = audioTracks.reduce((max, track) => Math.max(max, track.startTime + track.duration), 0);
     const newTrack: AudioTrack = { id: `track-${crypto.randomUUID()}`, audioId, name: audio.name, startTime: lastTrackEnd, duration: audio.duration, volume: 1, loop: false };
     setAudioTracks(prev => [...prev, newTrack]);
-    if (audioTracks.length === 0) setMuteOriginalAudio(true);
   }, [uploadedAudios, audioTracks]);
 
   const handleUpdateAudioTrack = useCallback((trackId: string, updates: Partial<AudioTrack>) => {
@@ -148,9 +148,7 @@ export function useAudioTracks({ videoDuration, isExportingRef, selectedAudioTra
 
   const handleDeleteAudioTrack = useCallback((trackId: string) => {
     setAudioTracks(prev => {
-      const remaining = prev.filter(track => track.id !== trackId);
-      if (remaining.length === 0) setMuteOriginalAudio(false);
-      return remaining;
+      return prev.filter(track => track.id !== trackId);
     });
   }, []);
 
@@ -192,7 +190,6 @@ export function useAudioTracks({ videoDuration, isExportingRef, selectedAudioTra
       const lastTrackEnd = audioTracks.reduce((max, track) => Math.max(max, track.startTime + track.duration), 0);
       const newTrack: AudioTrack = { id: pendingAudioUpload.trackId, audioId: pendingAudioUpload.audio.id, name: pendingAudioUpload.audio.name, startTime: lastTrackEnd, duration: trimEnd - trimStart, trimStart, volume: 1, loop: false };
       setAudioTracks(prev => [...prev, newTrack]);
-      if (audioTracks.length === 0) setMuteOriginalAudio(true);
     }
     setAutoTrimModalOpen(false);
     setPendingAudioUpload(null);

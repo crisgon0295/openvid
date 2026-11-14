@@ -64,6 +64,9 @@ export interface AudioMenuProps {
     onDeleteAudioTrack: (trackId: string) => void;
     selectedAudioTrackId: string | null;
     onSelectAudioTrack: (id: string | null) => void;
+    /** Original video audio (voice) muted? */
+    muteOriginalAudio?: boolean;
+    onToggleMuteOriginalAudio?: () => void;
 }
 
 export const MIN_FRAGMENT_DURATION = 0.1;

@@ -19,6 +19,8 @@ export function AudioMenu({
     onDeleteAudioTrack,
     selectedAudioTrackId,
     onSelectAudioTrack,
+    muteOriginalAudio = false,
+    onToggleMuteOriginalAudio,
 }: AudioMenuProps) {
     const t = useTranslations("audioMenu");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +113,28 @@ export function AudioMenu({
                 </Button>
                 <p className="text-xs text-muted-foreground/60 mt-2 text-center">{t("uploadHint")}</p>
             </div>
+
+            {onToggleMuteOriginalAudio && (
+                <button
+                    type="button"
+                    onClick={onToggleMuteOriginalAudio}
+                    aria-pressed={!muteOriginalAudio}
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${muteOriginalAudio ? "border-red-500/40 bg-red-500/10" : "border-border bg-muted/40 hover:bg-muted/60"}`}
+                >
+                    <span className="flex items-center gap-2.5">
+                        <Icon icon={muteOriginalAudio ? "solar:volume-cross-bold" : "solar:microphone-3-bold"} className={`size-4 ${muteOriginalAudio ? "text-red-400" : "text-foreground/80"}`} />
+                        <span>
+                            <span className="block text-sm font-medium text-foreground">Audio original del video</span>
+                            <span className="block text-[11px] text-muted-foreground">
+                                {muteOriginalAudio ? "Silenciado: no se oye tu voz ni el sonido grabado" : "Activo: tu voz suena junto con los efectos"}
+                            </span>
+                        </span>
+                    </span>
+                    <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${muteOriginalAudio ? "bg-muted-foreground/30" : "bg-primary"}`}>
+                        <span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-all ${muteOriginalAudio ? "left-0.5" : "left-4.5"}`} />
+                    </span>
+                </button>
+            )}
 
             <div className="flex flex-col gap-2">
                 <span className="text-xs font-medium text-muted-foreground">{t("timelineTracks", { count: audioTracks.length })}</span>
