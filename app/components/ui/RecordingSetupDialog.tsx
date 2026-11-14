@@ -577,6 +577,23 @@ export default function RecordingSetupDialog({ open, onClose, onStart }: Props) 
                       ))}
                   </SelectContent>
                 </Select>
+                <label className="mt-3 flex items-center justify-between gap-3 cursor-pointer pt-2 border-t border-border">
+                  <span className="text-xs text-foreground/80 flex items-start gap-2">
+                    <Icon icon="solar:soundwave-bold" className="size-4 mt-0.5 shrink-0" />
+                    <span>
+                      Reducción de ruido IA
+                      <span className="block text-[11px] text-muted-foreground">
+                        Quita zumbidos, siseo e interferencias de fondo sin afectar tu voz (RNNoise, en tu equipo).
+                      </span>
+                    </span>
+                  </span>
+                  <Toggle
+                    checked={setup.microphone.aiNoiseReduction !== false}
+                    onChange={(v) =>
+                      setSetup((s) => ({ ...s, microphone: { ...s.microphone, aiNoiseReduction: v } }))
+                    }
+                  />
+                </label>
               </div>
             </SectionToggle>
 

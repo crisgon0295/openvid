@@ -37,6 +37,8 @@ export interface MicrophoneConfig {
     volume: number;
     noiseSuppression: boolean;
     echoCancellation: boolean;
+    /** RNNoise neural noise reduction on the mic (default on). */
+    aiNoiseReduction?: boolean;
 }
 
 export interface RecordingSetupConfig {
@@ -96,6 +98,7 @@ export const DEFAULT_MICROPHONE_CONFIG: MicrophoneConfig = {
     volume: 1,
     noiseSuppression: true,
     echoCancellation: true,
+    aiNoiseReduction: true,
 };
 
 export const DEFAULT_RECORDING_SETUP: RecordingSetupConfig = {

@@ -11,6 +11,7 @@ import { clearVideoProjectAndAudios } from "@/lib/video-project-cache";
 import { normalizeRecordingBlob, probeBlobDuration, type NormalizedRecording } from "@/lib/webm-duration.utils";
 import { RecordingBackup, downloadBlob, makeBackupId } from "@/lib/local-backup";
 import { makeCameraDecodable } from "@/lib/vp9-range-fix";
+import { createMicDenoiseChain, connectWithFailsafe, DENOISE_SAMPLE_RATE } from "@/lib/audio/mic-denoise";
 
 export type { RecordingState, RecordingResult, VideoData, RecordingContextType };
 
@@ -444,6 +445,7 @@ export function useScreenRecording() {
   const cameraConfigRef = useRef<CameraConfig | null>(null);
   const cancelledRef = useRef(false);
   const allowUnloadRef = useRef(false);
+  const denoiseCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -520,6 +522,8 @@ export function useScreenRecording() {
       micStreamRef.current.getTracks().forEach((t) => t.stop());
       micStreamRef.current = null;
     }
+    denoiseCleanupRef.current?.();
+    denoiseCleanupRef.current = null;
     if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
       audioCtxRef.current.close().catch(() => undefined);
       audioCtxRef.current = null;
@@ -777,39 +781,53 @@ export function useScreenRecording() {
         let finalScreenStream: MediaStream = screenStream;
 
         if (needsMixing) {
-          try {
-            const AudioCtx =
-              window.AudioContext ||
-              (window as unknown as { webkitAudioContext: typeof AudioContext })
-                .webkitAudioContext;
-            const audioCtx = new AudioCtx();
-            audioCtxRef.current = audioCtx;
-            const destination = audioCtx.createMediaStreamDestination();
-
-            if (screenAudioTracks.length > 0) {
-              const screenSource = audioCtx.createMediaStreamSource(
-                new MediaStream(screenAudioTracks)
-              );
-              screenSource.connect(destination);
-            }
-
-            if (micAudioTracks.length > 0) {
-              const micSource = audioCtx.createMediaStreamSource(
-                new MediaStream(micAudioTracks)
-              );
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext })
+              .webkitAudioContext;
+          // Build the screen+mic mix; with AI denoise the context runs at 48 kHz.
+          const buildMix = async (useAiDenoise: boolean): Promise<MediaStream> => {
+            const audioCtx = useAiDenoise ? new AudioCtx({ sampleRate: DENOISE_SAMPLE_RATE }) : new AudioCtx();
+            try {
+              const destination = audioCtx.createMediaStreamDestination();
+              if (screenAudioTracks.length > 0) {
+                audioCtx.createMediaStreamSource(new MediaStream(screenAudioTracks)).connect(destination);
+              }
+              const micSource = audioCtx.createMediaStreamSource(new MediaStream(micAudioTracks));
               const micGain = audioCtx.createGain();
               micGain.gain.value = setup.microphone.volume;
-              micSource.connect(micGain);
               micGain.connect(destination);
+              if (useAiDenoise) {
+                const chain = await createMicDenoiseChain(audioCtx);
+                denoiseCleanupRef.current = connectWithFailsafe(audioCtx, micSource, chain, micGain);
+              } else {
+                micSource.connect(micGain);
+              }
+              audioCtxRef.current = audioCtx;
+              return new MediaStream([
+                ...screenStream.getVideoTracks(),
+                ...destination.stream.getAudioTracks(),
+              ]);
+            } catch (err) {
+              denoiseCleanupRef.current?.();
+              denoiseCleanupRef.current = null;
+              audioCtx.close().catch(() => undefined);
+              throw err;
             }
+          };
 
-            finalScreenStream = new MediaStream([
-              ...screenStream.getVideoTracks(),
-              ...destination.stream.getAudioTracks(),
-            ]);
+          const wantsAiDenoise = setup.microphone.aiNoiseReduction !== false;
+          try {
+            finalScreenStream = await buildMix(wantsAiDenoise);
           } catch (err) {
-            console.warn("Error mixing audio, using only screen audio:", err);
-            finalScreenStream = screenStream;
+            console.warn("Audio mix failed" + (wantsAiDenoise ? ", retrying without AI noise reduction:" : ":"), err);
+            try {
+              // Never lose the microphone because of the denoiser.
+              finalScreenStream = wantsAiDenoise ? await buildMix(false) : screenStream;
+            } catch (err2) {
+              console.warn("Error mixing audio, using only screen audio:", err2);
+              finalScreenStream = screenStream;
+            }
           }
         }
 
